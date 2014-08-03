@@ -18,40 +18,33 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
 public class InvertedIndexMapReduce {
 
-	public static void main(String... args) throws Exception {
-		runJob(Arrays.copyOfRange(args, 0, args.length - 1), args[args.length - 1]);
-	}
-
-	public static void runJob(String[] input, String output) throws Exception {
-		Configuration conf = new Configuration();
-		Job job = new Job(conf, "invertedindex");
-		job.setJarByClass(InvertedIndexMapReduce.class);
-		job.setMapperClass(InvertedIndexMapper.class);
-		job.setReducerClass(InvertedIndexReducer.class);
-		job.setMapOutputKeyClass(Text.class);
-		job.setMapOutputValueClass(Text.class);
-		Path outputPath = new Path(output);
-		FileInputFormat.setInputPaths(job, StringUtils.join(input, ","));
-		FileOutputFormat.setOutputPath(job, outputPath);
-		outputPath.getFileSystem(conf).delete(outputPath, true);
-		System.exit(job.waitForCompletion(true) ? 0 : 1);
-	}
-
+	/**
+	 * Mapper Class : 
+	 * 	Input [LongWritable, Text] i.e [Offset, Line]
+	 * 	Output [Text, Text] i.e [word, FileName]
+	 * 
+	 */
 	public static class InvertedIndexMapper extends Mapper<LongWritable, Text, Text, Text> {
-		private Text documentId;
+		/** To hold current file name **/
+		private Text currentFileName;
+		/** To avoid object creation again and again **/
 		private Text word = new Text();
+		/** Called at start of Map operation **/
 		@Override
 		protected void setup(Context context) {
 			String filename =
 					((FileSplit) context.getInputSplit()).getPath().getName();
-			documentId = new Text(filename);
+			currentFileName = new Text(filename);
 		}
 		@Override
 		protected void map(LongWritable key, Text value, Context context)
 				throws IOException, InterruptedException {
 			for (String token : StringUtils.split(value.toString())) {
-				word.set(token);
-				context.write(word, documentId);
+				token = token.replaceAll("[^a-zA-Z]", "");
+				if (StringUtils.isNotEmpty(token)) {
+					word.set(token);
+					context.write(word, currentFileName);
+				}
 			}
 		}
 	}
@@ -70,5 +63,25 @@ public class InvertedIndexMapReduce {
 			docIds.set(new Text(StringUtils.join(uniqueDocIds, ",")));
 			context.write(key, docIds);
 		}
+	}
+	
+
+	public static void runJob(String[] input, String output) throws Exception {
+		Configuration conf = new Configuration();
+		Job job = new Job(conf, "invertedindex");
+		job.setJarByClass(InvertedIndexMapReduce.class);
+		job.setMapperClass(InvertedIndexMapper.class);
+		job.setReducerClass(InvertedIndexReducer.class);
+		job.setMapOutputKeyClass(Text.class);
+		job.setMapOutputValueClass(Text.class);
+		Path outputPath = new Path(output);
+		FileInputFormat.setInputPaths(job, StringUtils.join(input, ","));
+		FileOutputFormat.setOutputPath(job, outputPath);
+		outputPath.getFileSystem(conf).delete(outputPath, true);
+		System.exit(job.waitForCompletion(true) ? 0 : 1);
+	}
+	
+	public static void main(String... args) throws Exception {
+		runJob(Arrays.copyOfRange(args, 0, args.length - 1), args[args.length - 1]);
 	}
 }
